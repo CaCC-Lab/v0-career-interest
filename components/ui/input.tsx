@@ -2,8 +2,19 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
-export interface InputProps
-  extends React.InputHTMLAttributes<HTMLInputElement> {}
+// 空のインターフェースを削除するか、必要なプロパティを追加します
+// 以下の行を削除または修正してください：
+// interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {}
+
+// 代わりに、必要に応じて以下のように書くことができます：
+// 例：カスタムプロパティを追加する場合
+interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
+  // カスタムプロパティをここに追加
+  // 例: customProp?: string;
+}
+
+// もしカスタムプロパティが不要な場合は、インターフェースを完全に削除し、
+// 直接 React.InputHTMLAttributes<HTMLInputElement> を使用することもできます
 
 const Input = React.forwardRef<HTMLInputElement, InputProps>(
   ({ className, type, ...props }, ref) => {

@@ -17,10 +17,10 @@ interface JobScore {
 }
 
 function cosineSimilarity(a: number[], b: (number | null)[]): number {
-  const validPairs = a.map((val, i) => [val, b[i]]).filter(([_, bVal]) => bVal !== null) as [number, number][];
+  const validPairs = a.map((val, i) => [val, b[i]]).filter(([, bVal]) => bVal !== null) as [number, number][];
   const dotProduct = validPairs.reduce((sum, [aVal, bVal]) => sum + aVal * bVal, 0);
-  const magnitudeA = Math.sqrt(validPairs.reduce((sum, [aVal, _]) => sum + aVal * aVal, 0));
-  const magnitudeB = Math.sqrt(validPairs.reduce((sum, [_, bVal]) => sum + bVal * bVal, 0));
+  const magnitudeA = Math.sqrt(validPairs.reduce((sum, [aVal]) => sum + aVal * aVal, 0));
+  const magnitudeB = Math.sqrt(validPairs.reduce((sum, [, bVal]) => sum + bVal * bVal, 0));
   return dotProduct / (magnitudeA * magnitudeB) || 0;
 }
 
@@ -43,8 +43,6 @@ function interpretSimilarityTrend(similarities: number[]): string {
   }
 
   const avgSimilarity = validSimilarities.reduce((sum, val) => sum + val, 0) / validSimilarities.length;
-  const maxSimilarity = Math.max(...validSimilarities);
-  const minSimilarity = Math.min(...validSimilarities);
   const stdDeviation = calculateStandardDeviation(validSimilarities);
 
   let interpretation = `平均類似度は${avgSimilarity.toFixed(2)}で、標準偏差は${stdDeviation.toFixed(2)}です。\n`;
@@ -94,11 +92,11 @@ export function JobRecommendation() {
   useEffect(() => {
     fetch('/job-scores.json')
       .then(response => response.json())
-      .then(data => {
+      .then((data: JobScore[]) => {
         // データの検証と変換
-        const validatedData = data.map((job: any) => ({
+        const validatedData = data.map((job) => ({
           ...job,
-          scores: job.scores.map((score: any) => 
+          scores: job.scores.map((score) => 
             typeof score === 'number' && !isNaN(score) ? score : null
           )
         }));

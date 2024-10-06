@@ -1,4 +1,3 @@
-import Image from "next/image";
 import {JobRecommendation} from "@/components/job-recommendation";
 
 export default function Home() {

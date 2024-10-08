@@ -1,4 +1,4 @@
-import {JobRecommendation} from "@/components/job-recommendation";
+import JobRecommendation from "@/components/job-recommendation";
 
 export default function Home() {
   return (

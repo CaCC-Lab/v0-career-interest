@@ -94,7 +94,7 @@ function interpretSimilarityTrend(similarities: number[]): string {
   return interpretation;
 }
 
-export default function Component() {
+export default function JobRecommendation() {
   const [userScores, setUserScores] = useState<number[]>(Array(6).fill(50))
   const [inputValues, setInputValues] = useState<string[]>(Array(6).fill("50"))
   const [jobScores, setJobScores] = useState<JobScore[]>([])

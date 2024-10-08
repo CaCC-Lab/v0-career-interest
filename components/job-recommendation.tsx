@@ -7,20 +7,34 @@ import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from 'recharts'
 import { Card, CardContent } from "@/components/ui/card"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { ReloadIcon } from "@radix-ui/react-icons"
 
 const categories = ["現実的", "研究的", "芸術的", "社会的", "企業的", "慣習的"]
 
 interface JobScore {
   name: string;
-  scores: (number | null)[];  // nullを許容するように変更
+  scores: (number | null)[];
   description: string;
 }
 
-function cosineSimilarity(a: number[], b: (number | null)[]): number {
-  const validPairs = a.map((val, i) => [val, b[i]]).filter(([, bVal]) => bVal !== null) as [number, number][];
-  const dotProduct = validPairs.reduce((sum, [aVal, bVal]) => sum + aVal * bVal, 0);
-  const magnitudeA = Math.sqrt(validPairs.reduce((sum, [aVal]) => sum + aVal * aVal, 0));
-  const magnitudeB = Math.sqrt(validPairs.reduce((sum, [, bVal]) => sum + bVal * bVal, 0));
+function normalizeScores(scores: (number | null)[]): number[] {
+  const validScores = scores.filter((score): score is number => score !== null);
+  const min = Math.min(...validScores);
+  const max = Math.max(...validScores);
+  return scores.map(score => score === null ? 0 : (score - min) / (max - min));
+}
+
+function weightedCosineSimilarity(a: number[], b: (number | null)[]): number {
+  const weights = [1.2, 1.1, 1.0, 1.0, 0.9, 0.8]; // 重み付け：現実的と研究的により重点を置く
+  const normalizedA = normalizeScores(a);
+  const normalizedB = normalizeScores(b);
+  
+  const validPairs = normalizedA.map((val, i) => [val, normalizedB[i], weights[i]]).filter(([_, bVal]) => bVal !== null) as [number, number, number][];
+  const dotProduct = validPairs.reduce((sum, [aVal, bVal, weight]) => sum + aVal * bVal * weight, 0);
+  const magnitudeA = Math.sqrt(validPairs.reduce((sum, [aVal, _, weight]) => sum + aVal * aVal * weight * weight, 0));
+  const magnitudeB = Math.sqrt(validPairs.reduce((sum, [_, bVal, weight]) => sum + bVal * bVal * weight * weight, 0));
+  
   return dotProduct / (magnitudeA * magnitudeB) || 0;
 }
 
@@ -43,6 +57,8 @@ function interpretSimilarityTrend(similarities: number[]): string {
   }
 
   const avgSimilarity = validSimilarities.reduce((sum, val) => sum + val, 0) / validSimilarities.length;
+  const maxSimilarity = Math.max(...validSimilarities);
+  const minSimilarity = Math.min(...validSimilarities);
   const stdDeviation = calculateStandardDeviation(validSimilarities);
 
   let interpretation = `平均類似度は${avgSimilarity.toFixed(2)}で、標準偏差は${stdDeviation.toFixed(2)}です。\n`;
@@ -80,7 +96,7 @@ function interpretSimilarityTrend(similarities: number[]): string {
   return interpretation;
 }
 
-export function JobRecommendation() {
+export default function Component() {
   const [userScores, setUserScores] = useState<number[]>(Array(6).fill(50))
   const [inputValues, setInputValues] = useState<string[]>(Array(6).fill("50"))
   const [jobScores, setJobScores] = useState<JobScore[]>([])
@@ -88,24 +104,34 @@ export function JobRecommendation() {
   const [showAllRecommendations, setShowAllRecommendations] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [trendInterpretation, setTrendInterpretation] = useState<string>("")
+  const [isLoading, setIsLoading] = useState(true)
+
+  const loadJobScores = async () => {
+    setIsLoading(true)
+    setError(null)
+    try {
+      const response = await fetch('/job-scores.json')
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      const data = await response.json()
+      const validatedData = data.map((job: any) => ({
+        ...job,
+        scores: job.scores.map((score: any) => 
+          typeof score === 'number' && !isNaN(score) ? score : null
+        )
+      }))
+      setJobScores(validatedData)
+    } catch (err) {
+      console.error("Error loading job scores:", err)
+      setError("職業スコアの読み込みに失敗しました。ネットワーク接続を確認し、後でもう一度お試しください。")
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   useEffect(() => {
-    fetch('/job-scores.json')
-      .then(response => response.json())
-      .then((data: JobScore[]) => {
-        // データの検証と変換
-        const validatedData = data.map((job) => ({
-          ...job,
-          scores: job.scores.map((score) => 
-            typeof score === 'number' && !isNaN(score) ? score : null
-          )
-        }));
-        setJobScores(validatedData);
-      })
-      .catch(err => {
-        console.error("Error loading job scores:", err);
-        setError("職業スコアの読み込みに失敗しました。後でもう一度お試しください。");
-      });
+    loadJobScores()
   }, [])
 
   const handleScoreChange = (index: number, value: string) => {
@@ -125,7 +151,7 @@ export function JobRecommendation() {
   const calculateRecommendations = useMemo(() => {
     try {
       const results = jobScores.map(job => {
-        const similarity = cosineSimilarity(userScores, job.scores);
+        const similarity = weightedCosineSimilarity(userScores, job.scores);
         return {
           name: job.name,
           similarity,
@@ -133,10 +159,14 @@ export function JobRecommendation() {
         };
       }).sort((a, b) => b.similarity - a.similarity);
 
-      const interpretation = interpretSimilarityTrend(results.map(r => r.similarity));
+      // 類似度の閾値を設定（例: 上位20%のみを表示）
+      const threshold = results[Math.floor(results.length * 0.2)]?.similarity || 0;
+      const filteredResults = results.filter(job => job.similarity >= threshold);
+
+      const interpretation = interpretSimilarityTrend(filteredResults.map(r => r.similarity));
       setTrendInterpretation(interpretation);
 
-      return results;
+      return filteredResults;
     } catch (err) {
       console.error("Error in calculateRecommendations:", err);
       setError("推薦の計算中にエラーが発生しました。入力を確認してください。")
@@ -154,13 +184,36 @@ export function JobRecommendation() {
     fullMark: 100,
   }))
 
+  const toggleRecommendations = () => {
+    setShowAllRecommendations(!showAllRecommendations);
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center h-screen">
+        <ReloadIcon className="mr-2 h-4 w-4 animate-spin" />
+        データを読み込んでいます...
+      </div>
+    )
+  }
+
   if (error) {
-    return <div className="text-red-500">{error}</div>
+    return (
+      <Alert variant="destructive">
+        <AlertTitle>エラー</AlertTitle>
+        <AlertDescription>
+          {error}
+          <Button onClick={loadJobScores} className="mt-2">
+            再試行
+          </Button>
+        </AlertDescription>
+      </Alert>
+    )
   }
 
   return (
     <div className="w-full max-w-4xl mx-auto p-4">
-      <h2 className="text-2xl font-bold mb-4 text-center">職業興味検査（VRT）結果入力</h2>
+      <h2 className="text-2xl font-bold mb-4 text-center">職業興味検査結果入力</h2>
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
         {categories.map((category, index) => (
           <div key={category} className="flex flex-col space-y-2">
@@ -229,9 +282,15 @@ export function JobRecommendation() {
             ))}
           </TableBody>
         </Table>
-        {!showAllRecommendations && recommendations.length > 10 && (
-          <Button onClick={() => setShowAllRecommendations(true)} className="mt-4">
-            すべての結果を表示（{recommendations.length}職種）
+        {recommendations.length > 10 && (
+          <Button 
+            onClick={toggleRecommendations} 
+            className="mt-4"
+            
+            aria-expanded={showAllRecommendations}
+            aria-controls="recommendations-table"
+          >
+            {showAllRecommendations ? "結果を一部のみ表示" : `すべての結果を表示（${recommendations.length}職種）`}
           </Button>
         )}
       </div>

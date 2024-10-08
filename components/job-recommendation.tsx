@@ -57,8 +57,6 @@ function interpretSimilarityTrend(similarities: number[]): string {
   }
 
   const avgSimilarity = validSimilarities.reduce((sum, val) => sum + val, 0) / validSimilarities.length;
-  const maxSimilarity = Math.max(...validSimilarities);
-  const minSimilarity = Math.min(...validSimilarities);
   const stdDeviation = calculateStandardDeviation(validSimilarities);
 
   let interpretation = `平均類似度は${avgSimilarity.toFixed(2)}で、標準偏差は${stdDeviation.toFixed(2)}です。\n`;
@@ -115,9 +113,9 @@ export default function Component() {
         throw new Error(`HTTP error! status: ${response.status}`)
       }
       const data = await response.json()
-      const validatedData = data.map((job: any) => ({
+      const validatedData = data.map((job: { scores: number[]}) => ({
         ...job,
-        scores: job.scores.map((score: any) => 
+        scores: job.scores.map((score: number) => 
           typeof score === 'number' && !isNaN(score) ? score : null
         )
       }))

@@ -30,10 +30,10 @@ function weightedCosineSimilarity(a: number[], b: (number | null)[]): number {
   const normalizedA = normalizeScores(a);
   const normalizedB = normalizeScores(b);
   
-  const validPairs = normalizedA.map((val, i) => [val, normalizedB[i], weights[i]]).filter(([_, bVal]) => bVal !== null) as [number, number, number][];
+  const validPairs = normalizedA.map((val, i) => [val, normalizedB[i], weights[i]]).filter(([, bVal]) => bVal !== null) as [number, number, number][];
   const dotProduct = validPairs.reduce((sum, [aVal, bVal, weight]) => sum + aVal * bVal * weight, 0);
-  const magnitudeA = Math.sqrt(validPairs.reduce((sum, [aVal, _, weight]) => sum + aVal * aVal * weight * weight, 0));
-  const magnitudeB = Math.sqrt(validPairs.reduce((sum, [_, bVal, weight]) => sum + bVal * bVal * weight * weight, 0));
+  const magnitudeA = Math.sqrt(validPairs.reduce((sum, [aVal, , weight]) => sum + aVal * aVal * weight * weight, 0));
+  const magnitudeB = Math.sqrt(validPairs.reduce((sum, [, bVal, weight]) => sum + bVal * bVal * weight * weight, 0));
   
   return dotProduct / (magnitudeA * magnitudeB) || 0;
 }

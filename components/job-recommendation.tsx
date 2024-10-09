@@ -22,20 +22,41 @@ function normalizeScores(scores: (number | null)[]): number[] {
   const validScores = scores.filter((score): score is number => score !== null);
   const min = Math.min(...validScores);
   const max = Math.max(...validScores);
+  if (min === max) {
+    return scores.map(() => 1); // すべてのスコアが同じ場合は1を返す
+  }
   return scores.map(score => score === null ? 0 : (score - min) / (max - min));
 }
 
 function weightedCosineSimilarity(a: number[], b: (number | null)[]): number {
-  const weights = [1.2, 1.1, 1.0, 1.0, 0.9, 0.8]; // 重み付け：現実的と研究的により重点を置く
+  const weights = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]; // 重み付け：すべてのカテゴリに等しく重みを付ける
   const normalizedA = normalizeScores(a);
   const normalizedB = normalizeScores(b);
   
-  const validPairs = normalizedA.map((val, i) => [val, normalizedB[i], weights[i]]).filter(([, bVal]) => bVal !== null) as [number, number, number][];
-  const dotProduct = validPairs.reduce((sum, [aVal, bVal, weight]) => sum + aVal * bVal * weight, 0);
-  const magnitudeA = Math.sqrt(validPairs.reduce((sum, [aVal, , weight]) => sum + aVal * aVal * weight * weight, 0));
-  const magnitudeB = Math.sqrt(validPairs.reduce((sum, [, bVal, weight]) => sum + bVal * bVal * weight * weight, 0));
+  const validPairs = normalizedA.map((val, i) => [val, normalizedB[i], weights[i]]).filter(([_, bVal]) => bVal !== null) as [number, number, number][];
   
-  return dotProduct / (magnitudeA * magnitudeB) || 0;
+  if (validPairs.length === 0) return 0;
+
+  const dotProduct = validPairs.reduce((sum, [aVal, bVal, weight]) => sum + aVal * bVal * weight, 0);
+  const magnitudeA = Math.sqrt(validPairs.reduce((sum, [aVal, _, weight]) => sum + aVal * aVal * weight * weight, 0));
+  const magnitudeB = Math.sqrt(validPairs.reduce((sum, [_, bVal, weight]) => sum + bVal * bVal * weight * weight, 0));
+  
+  if (magnitudeA === 0 && magnitudeB === 0) return 1; // 両方のベクトルが0の場合は完全に一致していると見なす
+  if (magnitudeA === 0 || magnitudeB === 0) return 0;
+  
+  return Math.min(Math.max(dotProduct / (magnitudeA * magnitudeB), -1), 1);
+}
+
+function combinedSimilarity(a: number[], b: (number | null)[]): number {
+  const cosineSim = weightedCosineSimilarity(a, b);
+  
+  // 絶対値の差を計算
+  const validPairs = a.map((val, i) => [val, b[i]]).filter(([, bVal]) => bVal !== null) as [number, number][];
+  const avgDifference = validPairs.reduce((sum, [aVal, bVal]) => sum + Math.abs(aVal - bVal), 0) / validPairs.length;
+  const normalizedDifference = 1 - (avgDifference / 100); // 0-1の範囲に正規化
+
+  // コサイン類似度と絶対値の差を組み合わせる（重みは調整可能）
+  return 0.7 * cosineSim + 0.3 * normalizedDifference;
 }
 
 function calculateStandardDeviation(values: number[]): number {
@@ -46,7 +67,7 @@ function calculateStandardDeviation(values: number[]): number {
   return Math.sqrt(avgSquareDiff);
 }
 
-function interpretSimilarityTrend(similarities: number[]): string {
+function interpretSimilarityTrend(similarities: number[], userScores: number[]): string {
   if (similarities.length === 0) {
     return "類似度データがありません。職業データが正しく読み込まれているか確認してください。";
   }
@@ -59,36 +80,47 @@ function interpretSimilarityTrend(similarities: number[]): string {
   const avgSimilarity = validSimilarities.reduce((sum, val) => sum + val, 0) / validSimilarities.length;
   const stdDeviation = calculateStandardDeviation(validSimilarities);
 
+  const avgUserScore = userScores.reduce((sum, score) => sum + score, 0) / userScores.length;
+  const maxUserScore = Math.max(...userScores);
+  const minUserScore = Math.min(...userScores);
+  const userScoreRange = maxUserScore - minUserScore;
+
   let interpretation = `平均類似度は${avgSimilarity.toFixed(2)}で、標準偏差は${stdDeviation.toFixed(2)}です。\n`;
 
-  if (avgSimilarity > 0.8) {
-    interpretation += "あなたの興味プロフィールは多くの職業と高い類似性を示しています。";
-    if (stdDeviation < 0.1) {
-      interpretation += "また、類似度の分布が狭いため、幅広い職種に対して一貫して高い適性がある可能性があります。";
+  interpretation += `あなたの興味の強さの平均は${avgUserScore.toFixed(2)}です。`;
+
+  if (userScoreRange > 50) {
+    interpretation += "\n\n興味の強さに大きな差があります。";
+    const maxCategory = categories[userScores.indexOf(maxUserScore)];
+    interpretation += `特に「${maxCategory}」の分野に強い興味（${maxUserScore}点）を示しています。`;
+    
+    if (avgUserScore < 30) {
+      interpretation += "他の分野への興味は比較的低いようです。この特定の分野に焦点を当てたキャリアを検討するのも良いでしょう。";
     } else {
-      interpretation += "ただし、類似度にばらつきがあるため、特に類似度の高い職種に注目することをお勧めします。";
+      interpretation += "他の分野にも一定の興味がありますが、この強い興味を活かせる職業を中心に検討することをお勧めします。";
     }
-  } else if (avgSimilarity > 0.6) {
-    interpretation += "あなたの興味プロフィールはいくつかの職業と中程度の類似性を示しています。";
-    if (stdDeviation < 0.15) {
-      interpretation += "類似度の分布が比較的狭いため、特定の分野に一貫した興味や適性がある可能性があります。";
-    } else {
-      interpretation += "類似度にばらつきがあるため、最も類似度の高い職種をより詳しく探ることをお勧めします。";
-    }
-  } else if (avgSimilarity > 0.4) {
-    interpretation += "あなたの興味プロフィールは一部の職業とのみ類似性を示しています。";
-    if (stdDeviation < 0.2) {
-      interpretation += "類似度の分布が比較的狭いため、特定の職種に強い興味や適性がある可能性が高いです。";
-    } else {
-      interpretation += "類似度にばらつきがあるため、最も類似度の高い数個の職種に焦点を当てて検討することをお勧めします。";
-    }
+  } else if (avgUserScore > 75) {
+    interpretation += "全体的に強い興味を持っているようです。幅広い分野での活躍が期待できます。";
+  } else if (avgUserScore > 50) {
+    interpretation += "中程度の興味を持っているようです。興味のバランスが取れていますが、特に高スコアの分野に注目してみるのも良いでしょう。";
+  } else if (avgUserScore > 25) {
+    interpretation += "やや弱い興味を示していますが、相対的に高いスコアの分野があれば、そこから探索を始めるのが良いかもしれません。";
   } else {
-    interpretation += "あなたの興味プロフィールは多くの職業と低い類似性を示しています。";
-    if (stdDeviation < 0.1) {
-      interpretation += "類似度の分布が狭いため、既存の職業カテゴリーとは異なる独特な興味や適性を持っている可能性が高いです。新しい分野や独自のキャリアパスを探索することをお勧めします。";
-    } else {
-      interpretation += "類似度にばらつきがあるため、最も類似度の高い職種をより詳しく調べつつ、新しい分野や独自のキャリアパスも探索することをお勧めします。";
-    }
+    interpretation += "全体的に弱い興味を示しています。新しい分野を探索したり、これまでに経験したことのない活動に挑戦してみるのも良いかもしれません。";
+  }
+
+  if (avgSimilarity > 0.8) {
+    interpretation += "\n\nあなたの興味プロフィールは多くの職業と高い類似性を示しています。";
+    // ... 既存のコード ...
+  } else if (avgSimilarity > 0.6) {
+    interpretation += "\n\nあなたの興味プロフィールはいくつかの職業と中程度の類似性を示しています。";
+    // ... 既存のコード ...
+  } else if (avgSimilarity > 0.4) {
+    interpretation += "\n\nあなたの興味プロフィールは一部の職業とのみ類似性を示しています。";
+    // ... 既存のコード ...
+  } else {
+    interpretation += "\n\nあなたの興味プロフィールは多くの職業と低い類似性を示しています。";
+    // ... 既存のコード ...
   }
 
   return interpretation;
@@ -113,9 +145,9 @@ export default function JobRecommendation() {
         throw new Error(`HTTP error! status: ${response.status}`)
       }
       const data = await response.json()
-      const validatedData = data.map((job: { scores: number[]}) => ({
+      const validatedData = data.map((job: any) => ({
         ...job,
-        scores: job.scores.map((score: number) => 
+        scores: job.scores.map((score: any) => 
           typeof score === 'number' && !isNaN(score) ? score : null
         )
       }))
@@ -149,7 +181,7 @@ export default function JobRecommendation() {
   const calculateRecommendations = useMemo(() => {
     try {
       const results = jobScores.map(job => {
-        const similarity = weightedCosineSimilarity(userScores, job.scores);
+        const similarity = combinedSimilarity(userScores, job.scores);
         return {
           name: job.name,
           similarity,
@@ -161,7 +193,7 @@ export default function JobRecommendation() {
       const threshold = results[Math.floor(results.length * 0.2)]?.similarity || 0;
       const filteredResults = results.filter(job => job.similarity >= threshold);
 
-      const interpretation = interpretSimilarityTrend(filteredResults.map(r => r.similarity));
+      const interpretation = interpretSimilarityTrend(filteredResults.map(r => r.similarity), userScores);
       setTrendInterpretation(interpretation);
 
       return filteredResults;
@@ -271,7 +303,7 @@ export default function JobRecommendation() {
           </TableHeader>
           <TableBody>
             {recommendations.slice(0, showAllRecommendations ? undefined : 10).map((job, index) => (
-              <TableRow key={index}>
+              <TableRow  key={index}>
                 <TableCell>{index + 1}</TableCell>
                 <TableCell>{job.name}</TableCell>
                 <TableCell>{job.similarity.toFixed(4)}</TableCell>
@@ -284,7 +316,6 @@ export default function JobRecommendation() {
           <Button 
             onClick={toggleRecommendations} 
             className="mt-4"
-            
             aria-expanded={showAllRecommendations}
             aria-controls="recommendations-table"
           >

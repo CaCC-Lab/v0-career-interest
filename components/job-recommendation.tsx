@@ -33,13 +33,13 @@ function weightedCosineSimilarity(a: number[], b: (number | null)[]): number {
   const normalizedA = normalizeScores(a);
   const normalizedB = normalizeScores(b);
   
-  const validPairs = normalizedA.map((val, i) => [val, normalizedB[i], weights[i]]).filter(([_, bVal]) => bVal !== null) as [number, number, number][];
+  const validPairs = normalizedA.map((val, i) => [val, normalizedB[i], weights[i]]).filter(([_val, bVal]) => bVal !== null) as [number, number, number][];
   
   if (validPairs.length === 0) return 0;
 
   const dotProduct = validPairs.reduce((sum, [aVal, bVal, weight]) => sum + aVal * bVal * weight, 0);
-  const magnitudeA = Math.sqrt(validPairs.reduce((sum, [aVal, _, weight]) => sum + aVal * aVal * weight * weight, 0));
-  const magnitudeB = Math.sqrt(validPairs.reduce((sum, [_, bVal, weight]) => sum + bVal * bVal * weight * weight, 0));
+  const magnitudeA = Math.sqrt(validPairs.reduce((sum, [aVal, _bVal, weight]) => sum + aVal * aVal * weight * weight, 0));
+  const magnitudeB = Math.sqrt(validPairs.reduce((sum, [_aVal, bVal, weight]) => sum + bVal * bVal * weight * weight, 0));
   
   if (magnitudeA === 0 && magnitudeB === 0) return 1; // 両方のベクトルが0の場合は完全に一致していると見なす
   if (magnitudeA === 0 || magnitudeB === 0) return 0;
@@ -145,9 +145,9 @@ export default function JobRecommendation() {
         throw new Error(`HTTP error! status: ${response.status}`)
       }
       const data = await response.json()
-      const validatedData = data.map((job: any) => ({
+      const validatedData = data.map((job: JobScore) => ({
         ...job,
-        scores: job.scores.map((score: any) => 
+        scores: job.scores.map((score: number | null) => 
           typeof score === 'number' && !isNaN(score) ? score : null
         )
       }))
